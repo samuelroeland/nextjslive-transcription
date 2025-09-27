@@ -58,6 +58,7 @@ const LeakDetectionApp: React.FC = () => {
 
   const captionTimeout = useRef<any>()
   const keepAliveInterval = useRef<any>()
+  const lastToggleTime = useRef<number>(0)
 
   // Initialize microphone on load
   useEffect(() => {
@@ -177,8 +178,19 @@ const LeakDetectionApp: React.FC = () => {
     console.log('Toggle listening called, current state:', {
       isListening: voiceState.isListening,
       microphoneState,
-      connectionState
+      connectionState,
+      timestamp: new Date().toISOString(),
     })
+
+    // Prevent rapid toggling
+    const now = Date.now()
+
+    if (now - lastToggleTime.current < 1000) {
+      // Prevent toggling within 1 second
+      console.log('Preventing rapid toggle, too soon since last toggle')
+      return
+    }
+    lastToggleTime.current = now
 
     if (voiceState.isListening) {
       // Stop listening
@@ -188,17 +200,24 @@ const LeakDetectionApp: React.FC = () => {
         isListening: false,
         liveCaption: undefined,
       }))
-      stopMicrophone()
-      disconnectFromDeepgram()
+
+      // Add small delay to ensure state is updated
+      setTimeout(() => {
+        stopMicrophone()
+        disconnectFromDeepgram()
+      }, 100)
     } else {
       // Start listening - allow if microphone is Ready OR Paused
       if (
         microphoneState === MicrophoneState.Ready ||
         microphoneState === MicrophoneState.Paused
       ) {
-        console.log('Starting recording with microphone state:', microphoneState)
+        console.log(
+          'Starting recording with microphone state:',
+          microphoneState,
+        )
         setVoiceState((prev) => ({ ...prev, isListening: true }))
-        
+
         try {
           await connectToDeepgram({
             model: 'nova-3',
@@ -214,7 +233,10 @@ const LeakDetectionApp: React.FC = () => {
           setVoiceState((prev) => ({ ...prev, isListening: false }))
         }
       } else {
-        console.log('Cannot start recording, microphone state:', microphoneState)
+        console.log(
+          'Cannot start recording, microphone state:',
+          microphoneState,
+        )
       }
     }
   }
@@ -253,7 +275,7 @@ const LeakDetectionApp: React.FC = () => {
   // Start new section
   const startNewSection = () => {
     console.log('Starting new section...')
-    
+
     // Stop listening if active
     if (voiceState.isListening) {
       console.log('Stopping current recording for new section')
@@ -273,7 +295,9 @@ const LeakDetectionApp: React.FC = () => {
       isListening: false, // Ensure listening state is false
     }))
 
-    console.log('New section started, microphone state should be ready for next use')
+    console.log(
+      'New section started, microphone state should be ready for next use',
+    )
   }
 
   // Export functions

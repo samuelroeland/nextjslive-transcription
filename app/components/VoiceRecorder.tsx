@@ -17,6 +17,26 @@ const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
   onToggleListening,
   microphoneReady,
 }) => {
+  const buttonRef = useRef<HTMLButtonElement>(null)
+
+  const handleRecordingToggle = (e: React.MouseEvent | React.TouchEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+
+    // Prevent multiple rapid clicks/touches
+    if (buttonRef.current) {
+      buttonRef.current.disabled = true
+      setTimeout(() => {
+        if (buttonRef.current) {
+          buttonRef.current.disabled = !microphoneReady
+        }
+      }, 500) // Re-enable after 500ms to prevent rapid clicking
+    }
+
+    console.log('Button clicked/touched, isListening:', isListening)
+    onToggleListening()
+  }
+
   return (
     <div className="bg-white rounded-lg p-4 shadow-md mb-4">
       <div className="flex justify-between items-center mb-3">
@@ -24,16 +44,19 @@ const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
           Issue Description
         </h3>
         <button
-          onClick={onToggleListening}
+          ref={buttonRef}
+          onTouchStart={(e) => e.preventDefault()}
+          onClick={handleRecordingToggle}
           disabled={!microphoneReady}
-          className={`flex items-center justify-center w-12 h-12 rounded-full text-white font-bold text-sm shadow-lg transition-all duration-200 ${
+          style={{ touchAction: 'manipulation' }} // Prevent zoom on double-tap
+          className={`flex items-center justify-center w-12 h-12 rounded-full text-white font-bold text-sm shadow-lg transition-all duration-200 select-none ${
             isListening
               ? 'bg-red-500 hover:bg-red-600 animate-pulse'
               : 'bg-blue-500 hover:bg-blue-600'
           } ${
             !microphoneReady
               ? 'opacity-50 cursor-not-allowed'
-              : 'hover:scale-110'
+              : 'hover:scale-110 active:scale-95'
           }`}
         >
           {isListening ? (
