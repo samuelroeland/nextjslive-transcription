@@ -1,133 +1,268 @@
-"use client";
+'use client'
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from 'react'
 import {
   LiveConnectionState,
   LiveTranscriptionEvent,
   LiveTranscriptionEvents,
   useDeepgram,
-} from "../context/DeepgramContextProvider";
+} from '../context/DeepgramContextProvider'
 import {
   MicrophoneEvents,
   MicrophoneState,
   useMicrophone,
-} from "../context/MicrophoneContextProvider";
-import Visualizer from "./Visualizer";
+} from '../context/MicrophoneContextProvider'
+import Visualizer from './Visualizer'
 
 const App: () => JSX.Element = () => {
   const [caption, setCaption] = useState<string | undefined>(
-    "Powered by Deepgram"
-  );
-  const { connection, connectToDeepgram, connectionState } = useDeepgram();
-  const { setupMicrophone, microphone, startMicrophone, microphoneState } =
-    useMicrophone();
-  const captionTimeout = useRef<any>();
-  const keepAliveInterval = useRef<any>();
+    'Powered by Deepgram',
+  )
+  const [fullTranscript, setFullTranscript] = useState<string>('')
+  const [isListening, setIsListening] = useState<boolean>(false)
+  const {
+    connection,
+    connectToDeepgram,
+    disconnectFromDeepgram,
+    connectionState,
+  } = useDeepgram()
+  const {
+    setupMicrophone,
+    microphone,
+    startMicrophone,
+    stopMicrophone,
+    microphoneState,
+  } = useMicrophone()
+  const captionTimeout = useRef<any>()
+  const keepAliveInterval = useRef<any>()
 
-  useEffect(() => {
-    setupMicrophone();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const clearTranscript = () => {
+    setFullTranscript('')
+  }
 
-  useEffect(() => {
-    if (microphoneState === MicrophoneState.Ready) {
-      connectToDeepgram({
-        model: "nova-3",
-        interim_results: true,
-        smart_format: true,
-        filler_words: true,
-        utterance_end_ms: 3000,
-      });
+  const toggleListening = async () => {
+    if (isListening) {
+      // Stop listening
+      setIsListening(false)
+      stopMicrophone()
+      disconnectFromDeepgram()
+      setCaption('Click to start listening...')
+    } else {
+      // Start listening
+      if (microphoneState === MicrophoneState.Ready) {
+        setIsListening(true)
+        setCaption('Connecting...')
+        await connectToDeepgram({
+          model: 'nova-3',
+          interim_results: true,
+          smart_format: true,
+          filler_words: true,
+          utterance_end_ms: 3000,
+          include_confidence: true,
+        })
+      }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [microphoneState]);
+  }
 
   useEffect(() => {
-    if (!microphone) return;
-    if (!connection) return;
+    setupMicrophone()
+    setCaption('Click to start listening...')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Remove the automatic connection - we'll do this manually now
+  // useEffect(() => {
+  //   if (microphoneState === MicrophoneState.Ready) {
+  //     connectToDeepgram({
+  //       model: 'nova-3',
+  //       interim_results: true,
+  //       smart_format: true,
+  //       filler_words: true,
+  //       utterance_end_ms: 3000,
+  //       include_confidence: true,
+  //     })
+  //   }
+  //   // eslint-disable-next-line react-hooks/exhaustive-deps
+  // }, [microphoneState])
+
+  useEffect(() => {
+    if (!microphone) return
+    if (!connection) return
 
     const onData = (e: BlobEvent) => {
       // iOS SAFARI FIX:
-      // Prevent packetZero from being sent. If sent at size 0, the connection will close. 
+      // Prevent packetZero from being sent. If sent at size 0, the connection will close.
       if (e.data.size > 0) {
-        connection?.send(e.data);
+        connection?.send(e.data)
       }
-    };
+    }
 
     const onTranscript = (data: LiveTranscriptionEvent) => {
-      const { is_final: isFinal, speech_final: speechFinal } = data;
-      let thisCaption = data.channel.alternatives[0].transcript;
+      const { is_final: isFinal, speech_final: speechFinal } = data
 
-      console.log("thisCaption", thisCaption);
-      if (thisCaption !== "") {
-        console.log('thisCaption !== ""', thisCaption);
-        setCaption(thisCaption);
+      // Filter words by confidence threshold (70% confidence)
+      const CONFIDENCE_THRESHOLD = 0.7
+
+      const alternative = data.channel.alternatives[0]
+      let processedText = ''
+
+      if (alternative.words && alternative.words.length > 0) {
+        // Filter only high-confidence words
+        const highConfidenceWords = alternative.words
+          .filter((word) => word.confidence >= CONFIDENCE_THRESHOLD)
+          .map((word) => word.word)
+          .join(' ')
+
+        processedText = highConfidenceWords
+        console.log('High confidence words:', highConfidenceWords)
+        if (highConfidenceWords.trim() !== '') {
+          setCaption(highConfidenceWords)
+        }
+      } else {
+        // Fallback to regular transcript if words array not available
+        processedText = alternative.transcript
+        console.log('Fallback caption:', processedText)
+        if (processedText !== '') {
+          setCaption(processedText)
+        }
       }
 
-      if (isFinal && speechFinal) {
-        clearTimeout(captionTimeout.current);
+      // Add to full transcript only when final and speech is final
+      if (isFinal && speechFinal && processedText.trim() !== '') {
+        setFullTranscript((prev) => {
+          const newText = prev + (prev ? ' ' : '') + processedText.trim()
+          return newText
+        })
+
+        clearTimeout(captionTimeout.current)
         captionTimeout.current = setTimeout(() => {
-          setCaption(undefined);
-          clearTimeout(captionTimeout.current);
-        }, 3000);
+          setCaption(undefined)
+          clearTimeout(captionTimeout.current)
+        }, 3000)
       }
-    };
+    }
 
-    if (connectionState === LiveConnectionState.OPEN) {
-      connection.addListener(LiveTranscriptionEvents.Transcript, onTranscript);
-      microphone.addEventListener(MicrophoneEvents.DataAvailable, onData);
+    if (connectionState === LiveConnectionState.OPEN && isListening) {
+      connection.addListener(LiveTranscriptionEvents.Transcript, onTranscript)
+      microphone.addEventListener(MicrophoneEvents.DataAvailable, onData)
 
-      startMicrophone();
+      startMicrophone()
     }
 
     return () => {
       // prettier-ignore
       connection.removeListener(LiveTranscriptionEvents.Transcript, onTranscript);
-      microphone.removeEventListener(MicrophoneEvents.DataAvailable, onData);
-      clearTimeout(captionTimeout.current);
-    };
+      microphone.removeEventListener(MicrophoneEvents.DataAvailable, onData)
+      clearTimeout(captionTimeout.current)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connectionState]);
+  }, [connectionState, isListening])
 
   useEffect(() => {
-    if (!connection) return;
+    if (!connection) return
 
     if (
       microphoneState !== MicrophoneState.Open &&
       connectionState === LiveConnectionState.OPEN
     ) {
-      connection.keepAlive();
+      connection.keepAlive()
 
       keepAliveInterval.current = setInterval(() => {
-        connection.keepAlive();
-      }, 10000);
+        connection.keepAlive()
+      }, 10000)
     } else {
-      clearInterval(keepAliveInterval.current);
+      clearInterval(keepAliveInterval.current)
     }
 
     return () => {
-      clearInterval(keepAliveInterval.current);
-    };
+      clearInterval(keepAliveInterval.current)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [microphoneState, connectionState]);
+  }, [microphoneState, connectionState])
 
   return (
     <>
       <div className="flex h-full antialiased">
         <div className="flex flex-row h-full w-full overflow-x-hidden">
           <div className="flex flex-col flex-auto h-full">
+            {/* Full transcript display */}
+            <div className="absolute top-4 left-4 right-4 z-10 max-h-[40%] overflow-y-auto">
+              <div className="bg-white/90 backdrop-blur-sm rounded-lg p-4 shadow-lg">
+                <div className="flex justify-between items-center mb-2">
+                  <h3 className="text-lg font-semibold text-gray-800">
+                    Your Story
+                  </h3>
+                  <button
+                    onClick={clearTranscript}
+                    className="px-3 py-1 bg-red-500 text-white text-sm rounded hover:bg-red-600 transition-colors"
+                  >
+                    Clear
+                  </button>
+                </div>
+                <div className="text-gray-700 leading-relaxed">
+                  {fullTranscript ||
+                    'Click the microphone button below to start dictating your story...'}
+                </div>
+              </div>
+            </div>
+
+            {/* Listen Toggle Button */}
+            <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-10">
+              <button
+                onClick={toggleListening}
+                disabled={
+                  microphoneState !== MicrophoneState.Ready && !isListening
+                }
+                className={`flex items-center justify-center w-16 h-16 rounded-full text-white font-bold text-lg shadow-lg transition-all duration-200 ${
+                  isListening
+                    ? 'bg-red-500 hover:bg-red-600 animate-pulse'
+                    : 'bg-blue-500 hover:bg-blue-600'
+                } ${
+                  microphoneState !== MicrophoneState.Ready && !isListening
+                    ? 'opacity-50 cursor-not-allowed'
+                    : 'hover:scale-110'
+                }`}
+              >
+                {isListening ? (
+                  <svg
+                    className="w-8 h-8"
+                    fill="currentColor"
+                    viewBox="0 0 20 20"
+                  >
+                    <rect x="6" y="4" width="8" height="12" rx="1" />
+                  </svg>
+                ) : (
+                  <svg
+                    className="w-8 h-8"
+                    fill="currentColor"
+                    viewBox="0 0 20 20"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M7 4a3 3 0 016 0v4a3 3 0 11-6 0V4zm4 10.93A7.001 7.001 0 0017 8a1 1 0 10-2 0A5 5 0 015 8a1 1 0 00-2 0 7.001 7.001 0 006 6.93V17H6a1 1 0 100 2h8a1 1 0 100-2h-3v-2.07z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                )}
+              </button>
+            </div>
+
             {/* height 100% minus 8rem */}
             <div className="relative w-full h-full">
               {microphone && <Visualizer microphone={microphone} />}
-              <div className="absolute bottom-[8rem]  inset-x-0 max-w-4xl mx-auto text-center">
-                {caption && <span className="bg-black/70 p-8">{caption}</span>}
+              <div className="absolute bottom-[8rem] inset-x-0 max-w-4xl mx-auto text-center">
+                {caption && (
+                  <span className="bg-black/70 p-8 text-white rounded">
+                    {caption}
+                  </span>
+                )}
               </div>
             </div>
           </div>
         </div>
       </div>
     </>
-  );
-};
+  )
+}
 
-export default App;
+export default App
