@@ -58,6 +58,7 @@ const LeakDetectionApp: React.FC = () => {
 
   const captionTimeout = useRef<any>()
   const keepAliveInterval = useRef<any>()
+  const lastToggleTime = useRef<number>(0)
 
   // Initialize microphone on load
   useEffect(() => {
@@ -177,8 +178,18 @@ const LeakDetectionApp: React.FC = () => {
     console.log('Toggle listening called, current state:', {
       isListening: voiceState.isListening,
       microphoneState,
-      connectionState
+      connectionState,
+      timestamp: new Date().toISOString()
     })
+
+    // Prevent rapid toggling
+    const now = Date.now()
+    
+    if (now - lastToggleTime.current < 1000) { // Prevent toggling within 1 second
+      console.log('Preventing rapid toggle, too soon since last toggle')
+      return
+    }
+    lastToggleTime.current = now
 
     if (voiceState.isListening) {
       // Stop listening
@@ -188,8 +199,13 @@ const LeakDetectionApp: React.FC = () => {
         isListening: false,
         liveCaption: undefined,
       }))
-      stopMicrophone()
-      disconnectFromDeepgram()
+      
+      // Add small delay to ensure state is updated
+      setTimeout(() => {
+        stopMicrophone()
+        disconnectFromDeepgram()
+      }, 100)
+      
     } else {
       // Start listening - allow if microphone is Ready OR Paused
       if (
