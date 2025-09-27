@@ -22,6 +22,7 @@ import VoiceRecorder from './VoiceRecorder'
 import ImageUploader from './ImageUploader'
 import ReportSectionManager from './ReportSectionManager'
 import ReportExporter from './ReportExporter'
+import LanguageSelector from './LanguageSelector'
 
 const LeakDetectionApp: React.FC = () => {
   // Voice recording state
@@ -34,6 +35,7 @@ const LeakDetectionApp: React.FC = () => {
   // Report state
   const [currentFloor, setCurrentFloor] = useState<string>('')
   const [currentRoom, setCurrentRoom] = useState<string>('')
+  const [selectedLanguage, setSelectedLanguage] = useState<string>('nl')
   const [images, setImages] = useState<string[]>([])
   const [report, setReport] = useState<LeakReport>({
     id: `report-${Date.now()}`,
@@ -221,6 +223,7 @@ const LeakDetectionApp: React.FC = () => {
         try {
           await connectToDeepgram({
             model: 'nova-3',
+            language: selectedLanguage,
             interim_results: true,
             smart_format: true,
             filler_words: true,
@@ -344,6 +347,12 @@ const LeakDetectionApp: React.FC = () => {
 
         {/* Current Section */}
         <div className="space-y-4">
+          <LanguageSelector
+            selectedLanguage={selectedLanguage}
+            onLanguageChange={setSelectedLanguage}
+            disabled={voiceState.isListening}
+          />
+
           <LocationInput
             floor={currentFloor}
             room={currentRoom}
