@@ -18,11 +18,11 @@ const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
   microphoneReady,
 }) => {
   const buttonRef = useRef<HTMLButtonElement>(null)
-  
+
   const handleRecordingToggle = (e: React.MouseEvent | React.TouchEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    
+
     // Prevent multiple rapid clicks/touches
     if (buttonRef.current) {
       buttonRef.current.disabled = true
@@ -32,7 +32,7 @@ const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
         }
       }, 500) // Re-enable after 500ms to prevent rapid clicking
     }
-    
+
     console.log('Button clicked/touched, isListening:', isListening)
     onToggleListening()
   }
@@ -45,7 +45,7 @@ const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
         </h3>
         <button
           ref={buttonRef}
-          onTouchStart={(e) => e.preventDefault()} 
+          onTouchStart={(e) => e.preventDefault()}
           onClick={handleRecordingToggle}
           disabled={!microphoneReady}
           style={{ touchAction: 'manipulation' }} // Prevent zoom on double-tap
